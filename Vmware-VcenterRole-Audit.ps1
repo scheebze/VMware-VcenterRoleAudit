@@ -84,14 +84,14 @@ Foreach ($Vcenter in $Vcenters){
 #Region Get Role and Privileges
 $AllData = @()
 Foreach($vcenter in $Vcenters){
-    write-host "Working on $($vcenter.VCenterName)" -ForegroundColor Yellow
+    write-host "Working on $($vcenter.VCenterName)" -ForegroundColor Cyan
     $PrivilegesReport = @()
 
     Write-Host "Getting Role information" -ForegroundColor Yellow
     foreach ($role in $Auditroles){
         if($vcenter.VCenterName -in ($global:DefaultVIServers.name)){
             $rolesearch = @()
-            $rolesearch = (get-virole -Name $role).PrivilegeList
+            $rolesearch = (get-virole -Name $role -server $vcenter.VCenterName).PrivilegeList
 
             if ($rolesearch){    
                 Write-host "$role exists on $($vcenter.VCenterName)" 
