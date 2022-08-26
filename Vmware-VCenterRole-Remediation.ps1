@@ -17,8 +17,9 @@ if (!$PowerCLI) {
 #Create Feature Array
 $Featurescheck = [PSCustomObject]@{
     PasswordImport = $false
-    VCenterImport = $false
+    VCenterImport = $true
     Roleimport = $false
+    CreateRole = $false
 }
 
 #Define Roles to Audit
@@ -192,6 +193,7 @@ $VeeamPrivileges = @(
 #EndRegion Define Role Privileges
 
 #Region Get Role and Privileges
+$VCenterData = @()
 Foreach($vcenter in $Vcenters){
     write-host "Working on $($vcenter.VCenterName)" -ForegroundColor Cyan
     Write-Host "Getting Role information" -ForegroundColor Yellow
@@ -205,8 +207,6 @@ Foreach($vcenter in $Vcenters){
             }
         $privilegeMap += $privilegeitemmap
     }
-
-    $VCenterData = @()
 
     foreach ($role in $Roles){
 
@@ -272,14 +272,95 @@ Foreach($vcenter in $Vcenters){
             }
             else{
                 write-host "$role doesn't exist on $($vcenter.VCenterName)" -ForegroundColor Magenta
-                $PrivilegeItemData = @()
-                $PrivilegeItemData = [PSCustomObject]@{
-                    Role = $Role
-                    PrivilegeName = "Role $Role Doesn't Exist"
-                    PrivilegeItemStatus = "Role $Role Doesn't Exist"
-                    VCenterName = $vcenter.VCenterName
+                if($Featurescheck.CreateRole -eq $true){
+
+                    #Check to see if Configuration defined for Role
+                    $Variablerolesearchname = @()
+                    $variablesearch = @()
+
+                    $Variablerolesearchname = $role + "privileges"
+                    $variablesearch = Get-Variable -name $Variablerolesearchname
+
+                    if($variablesearch){
+                        write-host "Creating $role on $($vcenter.VCenterName)" 
+                        $createdRole = @()
+
+                        #Create Role
+                        try{
+                            New-VIRole -name $role -server $vcenter.VCenterName -ErrorAction Stop
+                            Write-host "Successfully created $role on $($vcenter.VCenterName)"
+                            $createdRole = $true
+                        }
+                        catch{
+                            write-host "Failed to create $role on $($vcenter.VCenterName)"  -ForegroundColor Red
+                            $createdRole = $false
+                        }
+
+                        #Add Privileges to Role
+                        if($createdRole -eq $true){
+                            foreach ($Privilegeitem in $variablesearch.Value){
+                                try{
+                                    #get's the privilege item information to feed into the setvirole
+                                    $privilegeitemadd = @()
+                                    $privilegeitemadd = Get-VIPrivilege -server $vcenter.vcentername | where {$_.extensiondata.privid -eq $privilegeitem} -ErrorAction stop
+        
+                                    #Add Privilege to Role
+                                    Set-VIRole -Role $role -AddPrivilege $privilegeitemadd -Confirm:$false -ErrorAction Stop
+                                    write-host "Successfully added $Privilegeitem to $role on $($vcenter.VCenterName)" -ForegroundColor Green
+                                    $PrivilegeItemStatus = "Created"
+                                }
+                                catch{
+                                    write-host "Failed to add $Privilegeitem to $role on $($vcenter.VCenterName)" -ForegroundColor Red
+                                    $PrivilegeItemStatus = "Creation Failed"
+                                }
+                                #Add items to Role Data
+                                $PrivilegeItemData = @()
+                                $PrivilegeItemData = [PSCustomObject]@{
+                                    Role = $Role
+                                    PrivilegeName = $Privilegeitem
+                                    PrivilegeItemStatus = $PrivilegeItemStatus
+                                    VCenterName = $vcenter.VCenterName
+                                }
+                                $RoleData +=  $PrivilegeItemData
+                            }
+                        }
+                        if($createdRole -eq $false){
+                            write-host "Failed to create $role on $($vcenter.VCenterName)"  -ForegroundColor Red
+
+                            #Add items to Role Data
+                            $PrivilegeItemData = @()
+                            $PrivilegeItemData = [PSCustomObject]@{
+                                Role = $Role
+                                PrivilegeName = "Failed to create $Role"
+                                PrivilegeItemStatus = "Failed to create $Role"
+                                VCenterName = $vcenter.VCenterName
+                            }
+                            $RoleData +=  $PrivilegeItemData
+                        }
+                    }
+                    else{
+                        write-host "No configuration for $role in script" -ForegroundColor Red
+                        $PrivilegeItemData = @()
+                        $PrivilegeItemData = [PSCustomObject]@{
+                            Role = $Role
+                            PrivilegeName = "No configuration for $role in script"
+                            PrivilegeItemStatus = "No configuration for $role in script"
+                            VCenterName = $vcenter.VCenterName
+                        }
+                        $RoleData +=  $PrivilegeItemData
+                    }
                 }
-                $RoleData +=  $PrivilegeItemData
+                if($Featurescheck.CreateRole -eq $false){
+                    write-host "Create Role Feature Not enabled." -ForegroundColor Magenta
+                    $PrivilegeItemData = @()
+                    $PrivilegeItemData = [PSCustomObject]@{
+                        Role = $Role
+                        PrivilegeName = "Role $Role Doesn't Exist"
+                        PrivilegeItemStatus = "Role $Role Doesn't Exist"
+                        VCenterName = $vcenter.VCenterName
+                    }
+                    $RoleData +=  $PrivilegeItemData
+                } 
             }         
         }
         else{
